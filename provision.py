@@ -144,6 +144,7 @@ def main(argv=None):
 
 def do_action(
     hostname: str,
+    ip: str,
     api_url: str,
     apt_key: str,
     dry_run: bool,
