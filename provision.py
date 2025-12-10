@@ -4,18 +4,29 @@
 Author: @billz <billzimmerman@gmail.com>
 Author URI: https://github.com/billz
 
-Usage: python provision.py hosts.csv
+Usage: python provision.py <inventory>
+    [--retries N]
+    [--dry-run]
+    [--concurrency N]
+    [--api-url URL]
+    [--apt-key KEY]
+
+Example: python provision.py hosts.csv --dry-run
 
 Provisions servers from an inventory file like so:
     host1,192.168.0.5
     host2,172.10.2.1
 
-    Reduimentary IP validation is performed, along with 
+    Rudimentary IP validation is performed, along with
     concurrent processing with ThreadPoolExecutor. 
     Blank lines and comments are skipped and a dry-run
     mode is included.
     
     Todo: mock API call
+
+Notes:
+Rather than rely on an inventory file, a list of target hosts
+could be obtained from the API during execution.
 """
 
 import argparse
