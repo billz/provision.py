@@ -97,10 +97,14 @@ def parse_inventory(path: Path) -> Tuple[list, list]:
 
 
 def main(argv=None):
+    # Todo: consider adding timeout arg
     parser = argparse.ArgumentParser(description="Provision hosts from inventory file (hostname, ipv4 per line).")
     parser.add_argument("inventory", type=Path, help="Path to inventory file (hostname, ipv4 per line).")
     parser.add_argument("--retries", type=int, default=3, help="Retries per host on transient failure")
     parser.add_argument("--dry-run", action="store_true", help="Don't call the API; just show what would be done")
+    parser.add_argument("--concurrency", type=int, default=12, help="Number of concurrent workers")
+    parser.add_argument("--api-url", required=False, default="https://api.example.local/", help="API URL (placeholder)")
+    parser.add_argument("--api-key", required=False, default="", help="API key/auth token")
     args = parser.parse_args(argv)
 
     if not args.inventory.exists():
@@ -118,6 +122,66 @@ def main(argv=None):
         logging.info("No valid entries to process. Exiting.")
 
     results = []
+
+    max_workers = max(1, min(args.concurrency, len(valid_entries), 256))
+
+    logging.info("Begin provisioning with %d workers (dry-run=%s)", max_workers, args.dry_run)
+
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = {
+        ex.submit(
+            do_action,
+            hostname,
+            ip,
+            api_url=args.api_url,
+            api_key=args.api_key,
+            dry_run=args.dry_run,
+            retries=args.retries,
+            #timeout=args.timeout,
+        ): (hostname, ip)
+        for hostname, ip in valid_entries
+    }
+
+def do_action(
+    hostname: str,
+    api_url: str,
+    apt_key: str,
+    dry_run: bool,
+    max_retries: int,
+) -> Dict:
+    """
+    Worker function to perform an action on a single host.
+    Retry is implemented, timeout could also be added.
+    Returns a dict with result
+    """
+    payload = {"hostname": hostname, "ip": ip}
+
+    if dry_run:
+        logging.info("DRY-RUN: calling API for %s (%s) -> payload: %s", hostname, ip, payload)
+        return {"hostname": hostname, "ip": ip, "status": "dry-run", "attempts": 0}
+
+    attempt = 0
+    while attempt <= max_retries:
+        attempt += 1
+        try:
+            # Todo: implememnt mock API call
+            response = api_call(payload)
+
+        except Exception as exc:
+            logging.exception("Exception occurred while calling API for %s (%s) attempt %d: %s", hostname, ip, attempt, exc)
+
+    return {"hostname": hostname, "ip": ip, "status": "completed", "attempts": max_retries}
+
+def api_call(payload: Dict) -> Dict:
+    """
+    Simulates and API call. Returns a dict representing the result.
+    """
+    latency=random.uniform(0.05, 0.6) # seconds
+    # Todo: call API using api_url, api_key, payload args
+    # Implement return values based on status codes (200, 503, 400, etc.)
+
+    # success example
+    return {"ok": True, "status_code": 200, "body": {"message": "provisioned", "payload": payload}}
 
 if __name__ == "__main__":
     main()
