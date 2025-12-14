@@ -9,9 +9,10 @@ Usage: python provision.py <inventory>
     [--dry-run]
     [--concurrency N]
     [--api-url URL]
-    [--apt-key KEY]
+    [--api-key KEY]
+    [--timeout N]
 
-Example: python provision.py hosts.csv --dry-run
+Example: python provision.py hosts.csv --timeout 10 --dry-run
 
 Provisions servers from an inventory file like so:
     host1,192.168.0.5
@@ -21,8 +22,9 @@ Provisions servers from an inventory file like so:
     concurrent processing with ThreadPoolExecutor. 
     Blank lines and comments are skipped and a dry-run
     mode is included.
-    
-    Todo: mock API call
+
+    A mock API call function is included.
+    Todo: replace this with real API URL + endpoint.
 
 Notes:
 Rather than rely on an inventory file, a list of target hosts
