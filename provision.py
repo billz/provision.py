@@ -36,6 +36,7 @@ import logging
 import random
 import sys
 import time
+import requests
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -97,7 +98,6 @@ def parse_inventory(path: Path) -> Tuple[list, list]:
 
 
 def main(argv=None):
-    # Todo: consider adding timeout arg
     parser = argparse.ArgumentParser(description="Provision hosts from inventory file (hostname, ipv4 per line).")
     parser.add_argument("inventory", type=Path, help="Path to inventory file (hostname, ipv4 per line).")
     parser.add_argument("--retries", type=int, default=3, help="Retries per host on transient failure")
@@ -105,6 +105,7 @@ def main(argv=None):
     parser.add_argument("--concurrency", type=int, default=12, help="Number of concurrent workers")
     parser.add_argument("--api-url", required=False, default="https://api.example.local/", help="API URL (placeholder)")
     parser.add_argument("--api-key", required=False, default="", help="API key/auth token")
+    parser.add_argument("--timeout", required=False, default="10", help="API request timout value (seconds)")
     args = parser.parse_args(argv)
 
     if not args.inventory.exists():
@@ -120,6 +121,7 @@ def main(argv=None):
 
     if not valid_entries:
         logging.info("No valid entries to process. Exiting.")
+        sys.exit(0)
 
     results = []
 
@@ -129,26 +131,39 @@ def main(argv=None):
 
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
         futures = {
-        ex.submit(
-            do_action,
-            hostname,
-            ip,
-            api_url=args.api_url,
-            api_key=args.api_key,
-            dry_run=args.dry_run,
-            retries=args.retries,
-            #timeout=args.timeout,
-        ): (hostname, ip)
-        for hostname, ip in valid_entries
-    }
+            ex.submit(
+                do_action,
+                hostname,
+                ip,
+                api_url=args.api_url,
+                api_key=args.api_key,
+                dry_run=args.dry_run,
+                retries=args.retries,
+                timeout=args.timeout,
+            ): (hostname, ip)
+            for hostname, ip in valid_entries
+        }
+
+        for future in as_completed(futures):
+            hostname, ip = futures[future]
+            try:
+                result = future.result()
+                results.append(result)
+                logging.info("Completed %s (%s): %s", hostname, ip, result.get("status"))
+            except Exception as exc:
+                logging.error("Task failed for %s (%s): %s", hostname, ip, exc)
+                results.append({"hostname": hostname, "ip": ip, "status": "failed", "error": str(exc)})
+
+    logging.info("Provisioning complete. Processed %d hosts.", len(results))
 
 def do_action(
     hostname: str,
     ip: str,
     api_url: str,
-    apt_key: str,
+    api_key: str,
     dry_run: bool,
-    max_retries: int,
+    retries: int,
+    timeout: str,
 ) -> Dict:
     """
     Worker function to perform an action on a single host.
@@ -162,27 +177,33 @@ def do_action(
         return {"hostname": hostname, "ip": ip, "status": "dry-run", "attempts": 0}
 
     attempt = 0
-    while attempt <= max_retries:
+    while attempt <= retries:
         attempt += 1
         try:
-            # Todo: implememnt mock API call
-            response = api_call(payload)
+            # Todo: implement real API call
+            logging.info("MOCK-API: calling API with %s (%s) -> payload: %s", api_url, api_key, payload)
+            response = mock_api_call(api_url, api_key, payload, float(timeout))
 
         except Exception as exc:
             logging.exception("Exception occurred while calling API for %s (%s) attempt %d: %s", hostname, ip, attempt, exc)
 
-    return {"hostname": hostname, "ip": ip, "status": "completed", "attempts": max_retries}
+    return {"hostname": hostname, "ip": ip, "status": "completed", "attempts": retries}
 
-def api_call(payload: Dict) -> Dict:
+def mock_api_call(api_url: str, api_key: str, payload: Dict, timeout: float = 10.0) -> Dict:
     """
-    Simulates and API call. Returns a dict representing the result.
+    Simulates an API call. Returns a dict representing the result.
     """
     latency=random.uniform(0.05, 0.6) # seconds
-    # Todo: call API using api_url, api_key, payload args
     # Implement return values based on status codes (200, 503, 400, etc.)
 
-    # success example
-    return {"ok": True, "status_code": 200, "body": {"message": "provisioned", "payload": payload}}
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    resp = requests.post(api_url, json=payload, headers = headers, timeout=timeout)
+    try:
+        # success example
+        return {"ok": True, "status_code": 200, "body": {"message": "provisioned", "payload": payload}}
+        # exception
+    except ValueError:
+        raise NotImplementedError("api call is a stub")
 
 if __name__ == "__main__":
     main()
